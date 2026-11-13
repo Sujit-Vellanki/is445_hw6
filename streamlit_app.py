@@ -2,102 +2,97 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 
-st.set_page_config(page_title='IS 445 HW6: Illinois State Buildings', layout='centered')
-
 url = 'https://raw.githubusercontent.com/UIUC-iSchool-DataViz/is445_data/main/building_inventory.csv'
+df = pd.read_csv(url)
 
-
-@st.cache_data
-def load_data():
-    df = pd.read_csv(url)
-    # year 0 means missing so keep real years only
-    df = df[df['Year Constructed'] >= 1800].copy()
-    df['Decade'] = (df['Year Constructed'] // 10) * 10
-    return df
-
-
-df = load_data()
+# a year of 0 means the year is missing
+df = df[df['Year Constructed'] > 0]
+df['Decade'] = df['Year Constructed'] // 10 * 10
 
 st.title('Illinois State Buildings')
-st.write('Sujit Vellanki | IS 445 HW6')
+st.write('Sujit Vellanki | IS 445 Homework 6')
 st.write(
-    'This app looks at the Illinois state building inventory. Each row is one building owned by a state agency. '
-    'It has when the building was built, how big it is, what it is used for, and which agency owns it. '
-    'I dropped rows where the construction year was 0 since that means the year is missing.'
+    'This app uses the Illinois building inventory dataset. Each row is a building owned by the State of Illinois. '
+    'It lists the agency that owns it, the county it is in, the year it was built, its square footage, '
+    'its status and what it is used for. I removed buildings with a construction year of 0 because that means the year is missing.'
 )
 
 # Plot 1
-st.header('Plot 1: What the state built each decade')
+st.header('Plot 1: Buildings Built Each Decade')
 
-agencies = ['All agencies'] + df['Agency Name'].value_counts().index.tolist()
-agency = st.selectbox('Pick an agency', agencies)
-df1 = df if agency == 'All agencies' else df[df['Agency Name'] == agency]
+agency = st.selectbox('Choose an agency', ['All agencies'] + sorted(df['Agency Name'].unique()))
+if agency == 'All agencies':
+    df1 = df
+else:
+    df1 = df[df['Agency Name'] == agency]
 
-by_decade = df1.groupby(['Decade', 'Usage Description']).size().reset_index(name='Buildings')
+decades = df1.groupby(['Decade', 'Usage Description']).size().reset_index(name='Buildings')
 
-pick = alt.selection_point(fields=['Usage Description'], bind='legend')
+legend_click = alt.selection_point(fields=['Usage Description'], bind='legend')
 
-plot1 = alt.Chart(by_decade).mark_bar().encode(
-    x=alt.X('Decade:O', title='Decade built'),
-    y=alt.Y('Buildings:Q', title='Number of buildings'),
-    color=alt.Color('Usage Description:N', title='Usage (click to highlight)', scale=alt.Scale(scheme='tableau20')),
-    opacity=alt.condition(pick, alt.value(1), alt.value(0.15)),
+plot1 = alt.Chart(decades).mark_bar().encode(
+    x=alt.X('Decade:O', title='Decade Built'),
+    y=alt.Y('Buildings:Q', title='Number of Buildings'),
+    color=alt.Color('Usage Description:N', title='Usage Type', scale=alt.Scale(scheme='tableau20')),
+    opacity=alt.condition(legend_click, alt.value(1), alt.value(0.2)),
     tooltip=['Decade', 'Usage Description', 'Buildings']
-).add_params(pick).properties(height=400, title=f'Buildings built per decade: {agency}')
+).add_params(legend_click).properties(title='Buildings Built per Decade: ' + agency, height=400)
 
 st.altair_chart(plot1, width='stretch')
 
 st.write(
-    'This plot shows how many buildings were built each decade and what they are used for. '
-    'The main thing it highlights is the building boom that starts in the 1950s, peaks in the 1970s and stays high until the 2000s. '
-    'The 2010s bar is small because the data only goes up to 2019. '
-    'You can pick one agency from the dropdown to see its own history. For example Corrections builds a lot in the 1980s and 1990s '
-    'while Natural Resources is mostly storage and "unusual" buildings like shelters. '
-    'I used a stacked bar chart since decades are ordered groups and the stacks show the mix of usage types inside each decade. '
-    'I put decades on an ordinal axis so every bar has the same width and the count on a linear axis starting at zero so bar heights are honest. '
-    'Usage type is a category so I used a categorical color scheme with enough colors for all of them. '
-    'Clicking a usage type in the legend fades out the others which makes one type easy to follow over time. '
-    'If I had more time I would let you switch between counting buildings and adding up square footage '
-    'and I would group the small usage types into an Other group so the colors are easier to tell apart.'
+    'This plot shows how many state buildings were built in each decade and what they are used for. '
+    'The main feature I wanted to highlight is the building boom that starts in the 1950s, peaks in the 1970s '
+    'and stays high until the 2000s. The 2010s bar is small because the data only goes up to 2019. '
+    'The dropdown lets you look at one agency at a time. For example, the Department of Corrections built the most in the 1980s, '
+    'and the Department of Natural Resources mostly has storage and "Unusual" buildings. '
+    'You can also click a usage type in the legend to highlight it and fade out the others. '
+    'For the design, I used a stacked bar chart because decades are ordered groups and the stacks show the mix of usage types in each decade. '
+    'The decades are on an ordinal axis so every bar is the same width, and the count axis starts at zero so the bar heights are not misleading. '
+    'Usage type is a categorical variable, so I used the tableau20 color scheme since it has enough distinct colors for all 13 types. '
+    'If I had more time, I would add an option to show total square footage instead of the building count, '
+    'and I would combine the small usage types into an "Other" group so the colors are easier to tell apart.'
 )
 
 # Plot 2
-st.header('Plot 2: Where the floor space is')
+st.header('Plot 2: State Floor Space by County')
 
-yr_min, yr_max = int(df['Year Constructed'].min()), int(df['Year Constructed'].max())
-years = st.slider('Years built', yr_min, yr_max, (1900, yr_max))
-top_n = st.slider('How many counties to show', 5, 25, 15)
+years = st.slider('Select the years the buildings were built', 1750, 2019, (1900, 2019))
 
-df2 = df[df['Year Constructed'].between(years[0], years[1])]
-by_county = df2.groupby(['County', 'Bldg Status'])['Square Footage'].sum().reset_index()
-top = df2.groupby('County')['Square Footage'].sum().nlargest(top_n).index
-by_county = by_county[by_county['County'].isin(top)]
-by_county['Million sq ft'] = by_county['Square Footage'] / 1e6
+df2 = df[(df['Year Constructed'] >= years[0]) & (df['Year Constructed'] <= years[1])]
+top15 = df2.groupby('County')['Square Footage'].sum().nlargest(15).index
+df2 = df2[df2['County'].isin(top15)]
+counties = df2.groupby(['County', 'Bldg Status'])['Square Footage'].sum().reset_index()
+counties['Million Sq Ft'] = counties['Square Footage'] / 1000000
 
-plot2 = alt.Chart(by_county).mark_bar().encode(
-    x=alt.X('sum(Million sq ft):Q', title='Total floor space (million sq ft)'),
+plot2 = alt.Chart(counties).mark_bar().encode(
+    x=alt.X('sum(Million Sq Ft):Q', title='Total Floor Space (million sq ft)'),
     y=alt.Y('County:N', sort='-x', title='County'),
-    color=alt.Color('Bldg Status:N', title='Status',
+    color=alt.Color('Bldg Status:N', title='Building Status',
                     scale=alt.Scale(domain=['In Use', 'In Progress', 'Abandon'], range=['#4c78a8', '#f2a541', '#d62728'])),
-    tooltip=['County', 'Bldg Status', alt.Tooltip('Million sq ft:Q', format='.2f')]
-).properties(height=alt.Step(22), title=f'Top {top_n} counties by state floor space, built {years[0]} to {years[1]}')
+    tooltip=['County', 'Bldg Status', alt.Tooltip('Million Sq Ft:Q', format='.2f')]
+).properties(title=f'Top 15 Counties by State Floor Space (Built {years[0]} to {years[1]})', height=400)
 
 st.altair_chart(plot2, width='stretch')
 
 st.write(
-    'This plot shows which counties hold the most state owned floor space. '
-    'Cook and Champaign are at the top because of the big university campuses and state offices there. '
-    'The year slider lets you pick which buildings count based on when they were built so you can see how the top counties change over time. '
-    'The second slider sets how many counties to show. '
-    'I used a horizontal bar chart because county names are long and are easier to read on the y axis. '
-    'The bars are sorted from largest to smallest so the ranking is clear. '
-    'I changed square feet to millions of square feet so the axis labels are short. '
-    'The color shows building status. Blue is in use, orange is in progress, and red is abandoned so the red parts stand out as a warning. '
-    'If I had more time I would turn this into a county map of Illinois and I would add a per person version so big counties do not always win.'
+    'This plot shows the 15 counties with the most state owned floor space. '
+    'The main feature I wanted to highlight is that Cook and Champaign are far ahead of every other county. '
+    'Most of that space belongs to the University of Illinois campuses in Chicago and Champaign. '
+    'Sangamon is third because Springfield is the state capital and has a lot of state offices. '
+    'The slider lets you choose which buildings are counted based on the year they were built, '
+    'so you can see how the top counties change when you only look at older or newer buildings. '
+    'For the design, I used a horizontal bar chart because the county names are easier to read on the y axis. '
+    'I sorted the bars from largest to smallest so the ranking is clear, and I converted square feet to millions of square feet '
+    'so the axis labels stay short. The color shows building status. I used blue for in use, orange for in progress '
+    'and red for abandoned so the abandoned buildings stand out. '
+    'If I had more time, I would make this a county map of Illinois, '
+    'and I would add an option to adjust for county population so large counties do not always come out on top.'
 )
 
 st.header('Overlap with Homework 5')
 st.write(
-    'There is no overlap with Homework 5. For Homework 5 I used the Bigfoot reports dataset. '
-    'This app uses a different dataset (the Illinois building inventory) and both plots and all of the write up are new.'
+    'There is no overlap between this homework and Homework 5. For Homework 5, I used the Bigfoot reports dataset. '
+    'For this homework, I used the Illinois building inventory dataset, which is a different source. '
+    'Plot 1 and Plot 2 are both new plots, and none of the write up is reused from Homework 5.'
 )
