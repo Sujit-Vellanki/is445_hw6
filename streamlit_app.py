@@ -67,11 +67,11 @@ counties['Million Sq Ft'] = counties['Square Footage'] / 1000000
 
 plot2 = alt.Chart(counties).mark_bar().encode(
     x=alt.X('sum(Million Sq Ft):Q', title='Total Floor Space (million sq ft)'),
-    y=alt.Y('County:N', sort='-x', title='County'),
+    y=alt.Y('County:N', sort='-x', title='County', axis=alt.Axis(labelOverlap=False)),
     color=alt.Color('Bldg Status:N', title='Building Status',
                     scale=alt.Scale(domain=['In Use', 'In Progress', 'Abandon'], range=['#4c78a8', '#f2a541', '#d62728'])),
     tooltip=['County', 'Bldg Status', alt.Tooltip('Million Sq Ft:Q', format='.2f')]
-).properties(title=f'Top 15 Counties by State Floor Space (Built {years[0]} to {years[1]})', height=400)
+).properties(title=f'Top 15 Counties by State Floor Space (Built {years[0]} to {years[1]})', height=500)
 
 st.altair_chart(plot2, width='stretch')
 
